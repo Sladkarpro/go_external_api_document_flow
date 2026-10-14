@@ -1,6 +1,7 @@
 package vacancyapplications
 
 import (
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -80,8 +81,9 @@ func (h *VacancyApplicationHandler) Update() http.HandlerFunc {
 
 		application, err := h.getOne(r, id)
 		if err != nil {
-			httpx.WriteError(w, http.StatusUnprocessableEntity, httpx.NotFoundOr(err, "Отклик не найден", "Сервис откликов недоступен"))
-			return
+			slog.Error("Не удалось перечитать отклик после сохранения", "id", id, "error", err)
+			application = payload
+			application["id"] = id
 		}
 
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": application})
@@ -99,7 +101,7 @@ func (h *VacancyApplicationHandler) Resume() http.HandlerFunc {
 		httpx.NoStore(w)
 		path := vacancyApplicationsPath + "/" + strconv.FormatInt(id, 10) + "/resume"
 		if err := h.api.Stream(r.Context(), w, path, httpx.DownloadParam(r)); err != nil {
-			httpx.WriteError(w, http.StatusNotFound, httpx.NotFoundOr(err, "Резюме не найдено", "Ошибка получения резюме"))
+			httpx.WriteError(w, httpx.FileErrorStatus(err), httpx.NotFoundOr(err, "Резюме не найдено", "Ошибка получения резюме"))
 			return
 		}
 	}

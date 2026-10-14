@@ -146,7 +146,14 @@ func (c *DonSnab) Fetch(ctx context.Context, path string, query url.Values) ([]b
 		return nil, c.apiError(resp)
 	}
 
-	return io.ReadAll(io.LimitReader(resp.Body, maxAttachmentBytes))
+	content, err := io.ReadAll(io.LimitReader(resp.Body, maxAttachmentBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(content) > maxAttachmentBytes {
+		return nil, fmt.Errorf("размер вложения превышает %d байт", maxAttachmentBytes)
+	}
+	return content, nil
 }
 
 // Stream проксирует бинарный ответ upstream (вложения, резюме) прямо в клиента.
@@ -161,6 +168,16 @@ func (c *DonSnab) Stream(ctx context.Context, w http.ResponseWriter, path string
 	if resp.StatusCode != http.StatusOK {
 		return c.apiError(resp)
 	}
+
+	prefix := make([]byte, 32*1024)
+	var n int
+	for n == 0 && err == nil {
+		n, err = resp.Body.Read(prefix)
+	}
+	if err != nil && err != io.EOF {
+		return &APIError{Err: err}
+	}
+	body := io.MultiReader(bytes.NewReader(prefix[:n]), resp.Body)
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
@@ -177,8 +194,9 @@ func (c *DonSnab) Stream(ctx context.Context, w http.ResponseWriter, path string
 	// После WriteHeader ответ уже ушёл клиенту: обрыв на середине файла
 	// нельзя превращать в JSON-ошибку — она просто дописалась бы в тело.
 	w.WriteHeader(http.StatusOK)
-	if _, err := io.Copy(w, resp.Body); err != nil {
+	if _, err := io.Copy(w, body); err != nil {
 		slog.Error("Обрыв проксирования файла", "path", path, "error", err)
+		panic(http.ErrAbortHandler)
 	}
 
 	return nil

@@ -1,6 +1,7 @@
 package contractapplications
 
 import (
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -82,8 +83,9 @@ func (h *ContractApplicationHandler) Update() http.HandlerFunc {
 
 		application, err := h.getOne(r, id)
 		if err != nil {
-			httpx.WriteError(w, http.StatusUnprocessableEntity, httpx.NotFoundOr(err, "Заявка не найдена", "Сервис заявок недоступен"))
-			return
+			slog.Error("Не удалось перечитать заявку после сохранения", "id", id, "error", err)
+			application = payload
+			application["id"] = id
 		}
 
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": application})
@@ -101,7 +103,7 @@ func (h *ContractApplicationHandler) File() http.HandlerFunc {
 		httpx.NoStore(w)
 		path := contractApplicationsPath + "/files/" + strconv.FormatInt(id, 10)
 		if err := h.api.Stream(r.Context(), w, path, httpx.DownloadParam(r)); err != nil {
-			httpx.WriteError(w, http.StatusNotFound, httpx.NotFoundOr(err, "Файл не найден", "Ошибка получения файла"))
+			httpx.WriteError(w, httpx.FileErrorStatus(err), httpx.NotFoundOr(err, "Файл не найден", "Ошибка получения файла"))
 			return
 		}
 	}
@@ -123,6 +125,12 @@ func (h *ContractApplicationHandler) PDF() http.HandlerFunc {
 		}
 
 		application := dto.Data(raw)
+		if err := h.renderer.Acquire(r.Context()); err != nil {
+			httpx.WriteError(w, http.StatusInternalServerError, "Не удалось сформировать PDF")
+			return
+		}
+		defer h.renderer.Release()
+
 		files := httpx.FetchAttachments(r.Context(), h.api, application["files"], func(fileID int64) string {
 			return contractApplicationsPath + "/files/" + strconv.FormatInt(fileID, 10)
 		})

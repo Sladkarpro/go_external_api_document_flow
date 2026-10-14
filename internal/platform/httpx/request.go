@@ -70,11 +70,15 @@ func DecodeBody(r *http.Request) (map[string]any, error) {
 	return body, nil
 }
 
-// PickPresent builds a payload from keys that are present and not null.
+// PickPresent пропускает отсутствующие поля; null у adminComment очищает комментарий.
 func PickPresent(body map[string]any, keys ...string) map[string]any {
 	payload := make(map[string]any, len(keys))
 	for _, key := range keys {
-		if v, ok := body[key]; ok && v != nil {
+		v, ok := body[key]
+		if ok && key == "adminComment" && v == nil {
+			v = ""
+		}
+		if ok && v != nil {
 			payload[key] = v
 		}
 	}
