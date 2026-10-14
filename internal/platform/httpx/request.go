@@ -15,6 +15,9 @@ const ListLimit = "20"
 
 var ErrInvalidJSON = errors.New("Invalid JSON")
 
+// maxBodyBytes — потолок JSON-тела PATCH/POST: формы шлюза занимают килобайты.
+const maxBodyBytes = 1 << 20
+
 // PageParam repeats $request->query->getInt('page', 1):
 // absent key means 1, present non-number means 0.
 func PageParam(r *http.Request) string {
@@ -64,7 +67,7 @@ func IDParam(r *http.Request, name string) (int64, bool) {
 
 func DecodeBody(r *http.Request) (map[string]any, error) {
 	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body == nil {
+	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxBodyBytes)).Decode(&body); err != nil || body == nil {
 		return nil, ErrInvalidJSON
 	}
 	return body, nil

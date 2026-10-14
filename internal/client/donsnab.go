@@ -84,7 +84,14 @@ func NewDonSnab(cfg config.DonSnabConfig) *DonSnab {
 	return &DonSnab{
 		baseURL: strings.TrimRight(cfg.APIURL, "/"),
 		apiKey:  cfg.APIKey,
-		http:    &http.Client{Timeout: cfg.Timeout},
+		http: &http.Client{
+			Timeout: cfg.Timeout,
+			// X-API-Key для Go не «чувствительный» заголовок и при редиректе ушёл бы
+			// на чужой хост; редиректы от don_snab шлюзу не нужны.
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 
@@ -184,7 +191,13 @@ func (c *DonSnab) Stream(ctx context.Context, w http.ResponseWriter, path string
 		contentType = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", contentType)
-	if disposition := resp.Header.Get("Content-Disposition"); disposition != "" {
+	// Вложения загружают граждане: браузер не должен угадывать тип, исполнять
+	// HTML/SVG/скрипты на origin портала и показывать их inline.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	if isActiveContent(contentType) {
+		w.Header().Set("Content-Disposition", "attachment")
+	} else if disposition := resp.Header.Get("Content-Disposition"); disposition != "" {
 		w.Header().Set("Content-Disposition", disposition)
 	}
 	if length := resp.Header.Get("Content-Length"); length != "" {
@@ -243,4 +256,15 @@ func decodeJSON(r io.Reader) (map[string]any, error) {
 		return nil, err
 	}
 	return data, nil
+}
+
+// isActiveContent — типы, которые браузер может исполнить как документ или скрипт.
+func isActiveContent(contentType string) bool {
+	ct := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
+	switch ct {
+	case "text/html", "application/xhtml+xml", "image/svg+xml", "text/javascript",
+		"application/javascript", "text/xml", "application/xml":
+		return true
+	}
+	return strings.HasSuffix(ct, "+xml")
 }
