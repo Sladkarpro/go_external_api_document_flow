@@ -85,8 +85,10 @@ func (h *CitizenAppealHandler) Update() http.HandlerFunc {
 		appeal, err := h.getOne(r, id)
 		if err != nil {
 			slog.Error("Не удалось перечитать обращение после сохранения", "id", id, "error", err)
-			appeal = payload
-			appeal["id"] = id
+			// Частичный объект затёр бы карточку на фронте (файлы, подписи статуса),
+			// поэтому честно сообщаем, что сохранение прошло, а карточку надо перечитать.
+			httpx.WriteError(w, http.StatusBadGateway, "Изменения сохранены, но обновить карточку не удалось. Обновите страницу.")
+			return
 		}
 
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": appeal})

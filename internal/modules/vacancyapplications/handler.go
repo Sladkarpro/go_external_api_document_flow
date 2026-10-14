@@ -82,8 +82,10 @@ func (h *VacancyApplicationHandler) Update() http.HandlerFunc {
 		application, err := h.getOne(r, id)
 		if err != nil {
 			slog.Error("Не удалось перечитать отклик после сохранения", "id", id, "error", err)
-			application = payload
-			application["id"] = id
+			// Частичный объект затёр бы карточку на фронте (файлы, подписи статуса),
+			// поэтому честно сообщаем, что сохранение прошло, а карточку надо перечитать.
+			httpx.WriteError(w, http.StatusBadGateway, "Изменения сохранены, но обновить карточку не удалось. Обновите страницу.")
+			return
 		}
 
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"data": application})
